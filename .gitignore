@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+vendor/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+storage/logs/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Database
+*.sqlite
+*.db
+
+# Docker
+docker-compose.override.yml
+
+# Storage
+storage/app/*
+!storage/app/.gitkeep
+storage/framework/cache/*
+!storage/framework/cache/.gitkeep
+storage/framework/sessions/*
+!storage/framework/sessions/.gitkeep
+storage/framework/views/*
+!storage/framework/views/.gitkeep
+
+# Models and Data
+backend/ml-service/models/*
+backend/ml-service/data/*
+!backend/ml-service/models/.gitkeep
+!backend/ml-service/data/.gitkeep
+
+# Coverage reports
+coverage/
+*.coverage
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
