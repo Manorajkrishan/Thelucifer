@@ -24,8 +24,8 @@ class Document extends Model
     ];
 
     protected $casts = [
-        'extracted_data' => 'array',
-        'metadata' => 'array',
+        'extracted_data' => \App\Casts\JsonOrEmptyArray::class,
+        'metadata' => \App\Casts\JsonOrEmptyArray::class,
         'processed_at' => 'datetime',
         'file_size' => 'integer',
     ];

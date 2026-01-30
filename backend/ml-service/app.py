@@ -64,11 +64,18 @@ def get_db_connection():
         password=os.getenv('POSTGRES_PASSWORD', 'sentinelai_password')
     )
 
-# Initialize Neo4j driver
-neo4j_driver = GraphDatabase.driver(
-    os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
-    auth=(os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', 'sentinelai_password'))
-)
+# Initialize Neo4j driver (optional; fallback to in-memory knowledge graph if unavailable)
+neo4j_driver = None
+try:
+    _driver = GraphDatabase.driver(
+        os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
+        auth=(os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', 'sentinelai_password'))
+    )
+    _driver.verify_connectivity()
+    neo4j_driver = _driver
+    logger.info('Neo4j connected; knowledge graph using Neo4j')
+except Exception as e:
+    logger.warning(f'Neo4j unavailable ({e}); knowledge graph using in-memory fallback')
 
 # Initialize services
 document_processor = DocumentProcessor()
@@ -106,11 +113,38 @@ class DocumentProcessResource(Resource):
             if not all([document_id, file_path, file_type]):
                 return {'error': 'Missing required fields'}, 400
 
+            # Verify file exists
+            import os
+            if not os.path.exists(file_path):
+                logger.error(f"File not found: {file_path}")
+                return {'error': f'File not found: {file_path}'}, 404
+
             # Process document
+            logger.info(f"Processing document {document_id} from {file_path}")
             result = document_processor.process_document(document_id, file_path, file_type)
 
             # Store extracted knowledge in Neo4j
-            knowledge_graph.store_document_knowledge(document_id, result)
+            try:
+                knowledge_graph.store_document_knowledge(document_id, result)
+            except Exception as e:
+                logger.warning(f"Could not store in knowledge graph: {e}")
+
+            # Trigger learning from extracted data automatically
+            try:
+                logger.info(f"Triggering learning from document {document_id}")
+                learning_result = self_learning_engine.learn_from_documents([result])
+                logger.info(f"Learning completed: {learning_result.get('patterns_learned', 0)} patterns learned")
+                
+                # Also track in auto_learner for summary
+                auto_learner.processed_documents.append({
+                    'document_id': document_id,
+                    'filename': os.path.basename(file_path),
+                    'file_path': file_path,
+                    'extracted_data': result,
+                    'learning_result': learning_result
+                })
+            except Exception as e:
+                logger.error(f"Could not trigger learning: {e}")
 
             return {
                 'success': True,
@@ -148,12 +182,14 @@ class SimulationResource(Resource):
     """Run cyber-offensive simulation"""
     def post(self):
         try:
-            data = request.get_json()
-            simulation_type = data.get('type')
-            threat_data = data.get('threat_data')
+            data = request.get_json() or {}
+            # Accept both 'type' and 'simulation_type'
+            simulation_type = data.get('type') or data.get('simulation_type')
+            # Accept both 'threat_data' and 'attack_data'
+            threat_data = data.get('threat_data') or data.get('attack_data')
 
             if not simulation_type:
-                return {'error': 'Missing simulation type'}, 400
+                return {'error': 'Missing simulation type (use "type" or "simulation_type")'}, 400
 
             # Run simulation in sandboxed environment
             simulation_result = simulation_engine.run_simulation(simulation_type, threat_data)
@@ -187,6 +223,16 @@ class KnowledgeGraphResource(Resource):
         except Exception as e:
             logger.error(f"Error querying knowledge graph: {str(e)}")
             return {'error': str(e)}, 500
+
+
+class KnowledgeGraphStatusResource(Resource):
+    """Knowledge graph status (Neo4j vs in-memory fallback)"""
+    def get(self):
+        return {
+            'success': True,
+            'neo4j': neo4j_driver is not None,
+            'backend': 'neo4j' if neo4j_driver else 'in-memory'
+        }, 200
 
 
 class SelfLearningResource(Resource):
@@ -249,10 +295,10 @@ class DatasetManagerResource(Resource):
         }, 200
     
     def post(self):
-        """Download or add a dataset"""
+        """Download or add a dataset. Actions: download, add, download-url."""
         try:
-            data = request.get_json()
-            action = data.get('action')  # 'download' or 'add'
+            data = request.get_json() or {}
+            action = data.get('action')  # 'download', 'add', or 'download-url'
             
             if action == 'download':
                 dataset_id = data.get('dataset_id')
@@ -265,8 +311,16 @@ class DatasetManagerResource(Resource):
                 metadata = data.get('metadata', {})
                 result = dataset_manager.add_custom_dataset(file_path, dataset_id, metadata)
             
+            elif action == 'download-url':
+                url = data.get('url')
+                dataset_id = data.get('dataset_id')
+                if not url:
+                    return {'error': 'Missing url for download-url'}, 400
+                result = dataset_manager.download_from_url_to_project(url, dataset_id)
+                if not result.get('success'):
+                    return {'error': result.get('error', 'Download failed')}, 400
             else:
-                return {'error': 'Invalid action'}, 400
+                return {'error': 'Invalid action. Use download, add, or download-url.'}, 400
             
             return {
                 'success': True,
@@ -413,6 +467,13 @@ class CounterOffensiveResource(Resource):
             data = request.get_json()
             attack_data = data.get('attack_data', {})
             
+            # Ensure attack_data has required structure
+            if 'network' not in attack_data:
+                attack_data['network'] = {
+                    'source_ip': attack_data.get('source_ip', 'unknown'),
+                    'destination_ip': attack_data.get('target_ip', 'unknown')
+                }
+            
             # Step 1: Attack Detection (already done by threat_detector)
             # Step 2: Attacker Profiling
             attacker_profile = attacker_profiler.profile_attacker(attack_data)
@@ -557,6 +618,7 @@ api.add_resource(DocumentProcessResource, '/api/v1/documents/process')
 api.add_resource(ThreatDetectResource, '/api/v1/threats/detect')
 api.add_resource(SimulationResource, '/api/v1/simulations/run')
 api.add_resource(KnowledgeGraphResource, '/api/v1/knowledge/query')
+api.add_resource(KnowledgeGraphStatusResource, '/api/v1/knowledge/status')
 api.add_resource(SelfLearningResource, '/api/v1/learning/learn')
 api.add_resource(DatasetManagerResource, '/api/v1/datasets')
 api.add_resource(DriveLinkLearnerResource, '/api/v1/learning/drive-link')
@@ -587,6 +649,7 @@ def index():
             'detect_threat': '/api/v1/threats/detect',
             'run_simulation': '/api/v1/simulations/run',
             'query_knowledge': '/api/v1/knowledge/query',
+            'knowledge_status': '/api/v1/knowledge/status',
             'self_learning': '/api/v1/learning/learn',
             'dataset_manager': '/api/v1/datasets',
             'drive_link_learner': '/api/v1/learning/drive-link',

@@ -357,13 +357,37 @@ const downloadDocument = async (doc) => {
 
 const processDocument = async (doc) => {
   try {
-    await axios.post(`${API_URL}/api/documents/${doc.id}/process`, {}, {
-      headers: { Authorization: `Bearer ${authStore.token}` }
+    // Check if token exists
+    if (!authStore.token) {
+      alert('Please login again. Your session may have expired.')
+      return
+    }
+
+    const response = await axios.post(`${API_URL}/api/documents/${doc.id}/process`, {}, {
+      headers: { 
+        Authorization: `Bearer ${authStore.token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
     })
-    await fetchDocuments()
+    
+    if (response.data.success) {
+      alert('Document processing initiated successfully')
+      await fetchDocuments()
+    } else {
+      alert('Process failed: ' + (response.data.message || 'Unknown error'))
+    }
   } catch (error) {
     console.error('Process failed:', error)
-    alert('Process failed')
+    
+    // Handle 401 specifically
+    if (error.response?.status === 401) {
+      alert('Authentication failed. Please login again.')
+      // Optionally redirect to login
+      // router.push('/login')
+    } else {
+      alert('Process failed: ' + (error.response?.data?.message || error.message || 'Unknown error'))
+    }
   }
 }
 

@@ -17,34 +17,47 @@ class DocumentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Document::query();
+        try {
+            $query = Document::query();
 
-        // Filter by status
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('file_type')) {
+                $query->where('file_type', $request->file_type);
+            }
+
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                      ->orWhere('filename', 'like', "%{$search}%");
+                });
+            }
+
+            $perPage = min((int) $request->get('per_page', 15), 100);
+            $perPage = $perPage >= 1 ? $perPage : 15;
+            $documents = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $documents,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Documents index failed', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            $body = [
+                'success' => false,
+                'message' => 'Failed to list documents.',
+            ];
+            if (config('app.debug')) {
+                $body['error'] = $e->getMessage();
+            }
+            return response()->json($body, 500);
         }
-
-        // Filter by file type
-        if ($request->has('file_type')) {
-            $query->where('file_type', $request->file_type);
-        }
-
-        // Search
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('filename', 'like', "%{$search}%");
-            });
-        }
-
-        $perPage = $request->get('per_page', 15);
-        $documents = $query->orderBy('created_at', 'desc')->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'data' => $documents,
-        ]);
     }
 
     /**
@@ -335,10 +348,26 @@ class DocumentController extends Controller
             } else {
                 // File is in Laravel storage
                 $fullPath = storage_path('app/public/' . $filePath);
+                
+                // Verify file exists
+                if (!file_exists($fullPath)) {
+                    \Log::error('Document file not found for processing', [
+                        'document_id' => $document->id,
+                        'file_path' => $filePath,
+                        'full_path' => $fullPath,
+                    ]);
+                    return null;
+                }
             }
 
+            \Log::info('Sending document to ML service for processing', [
+                'document_id' => $document->id,
+                'file_path' => $fullPath,
+                'file_type' => $document->file_type,
+            ]);
+
             // Send document to ML service for processing and learning
-            $response = Http::timeout(30)->post("{$mlServiceUrl}/api/v1/documents/process", [
+            $response = Http::timeout(60)->post("{$mlServiceUrl}/api/v1/documents/process", [
                 'document_id' => "doc_{$document->id}",
                 'file_path' => $fullPath,
                 'file_type' => $document->file_type,

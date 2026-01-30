@@ -154,7 +154,8 @@ class TargetValidator:
     def _check_whitelist(self, attacker_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Check if source is whitelisted"""
         network_intel = attacker_profile.get('network_intelligence', {})
-        source_ip = network_intel.get('routes', [{}])[0].get('source_ip', '')
+        routes = network_intel.get('routes', [])
+        source_ip = routes[0].get('source_ip', '') if routes and len(routes) > 0 else ''
         
         is_whitelisted = source_ip in self.whitelist
         
@@ -167,7 +168,8 @@ class TargetValidator:
     def _check_blacklist(self, attacker_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Check if source is blacklisted (confirmed malicious)"""
         network_intel = attacker_profile.get('network_intelligence', {})
-        source_ip = network_intel.get('routes', [{}])[0].get('source_ip', '')
+        routes = network_intel.get('routes', [])
+        source_ip = routes[0].get('source_ip', '') if routes and len(routes) > 0 else ''
         
         is_blacklisted = source_ip in self.blacklist
         
@@ -180,7 +182,8 @@ class TargetValidator:
     def _check_geolocation_risk(self, attacker_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Check geolocation risk factors"""
         network_intel = attacker_profile.get('network_intelligence', {})
-        geolocation = network_intel.get('routes', [{}])[0].get('geolocation', {})
+        routes = network_intel.get('routes', [])
+        geolocation = routes[0].get('geolocation', {}) if routes and len(routes) > 0 else {}
         country = geolocation.get('country', 'unknown')
         
         # High-risk countries (example - fictional)

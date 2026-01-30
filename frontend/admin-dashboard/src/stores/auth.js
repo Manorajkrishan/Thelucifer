@@ -15,22 +15,29 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await axios.post(`${API_URL}/api/login`, credentials)
         
-        if (response.data.token) {
+        if (response.data?.token) {
           this.token = response.data.token
           this.user = response.data.user
           this.isAuthenticated = true
           
           localStorage.setItem('token', this.token)
           
-          // Set default authorization header
           axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
           
           return { success: true }
         }
         
         return { success: false, error: 'Invalid credentials' }
-      } catch (error) {
-        return { success: false, error: error.response?.data?.message || 'Login failed' }
+      } catch (err) {
+        const status = err.response?.status
+        const msg = err.response?.data?.message || err.message || 'Login failed'
+        if (status === 401) {
+          return {
+            success: false,
+            error: 'Invalid email or password. If you haven\'t yet, run .\\CREATE-ADMIN-USER.ps1 then use admin@sentinelai.com / admin123.'
+          }
+        }
+        return { success: false, error: msg }
       }
     },
 

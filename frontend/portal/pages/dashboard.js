@@ -143,7 +143,7 @@ export default function Dashboard() {
           {!token ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
               <p className="text-yellow-800 mb-4">Please login to view dashboard</p>
-              <Link href="/login" className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+              <Link href="/login" prefetch={false} className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
                 Go to Login
               </Link>
             </div>

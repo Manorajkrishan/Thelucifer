@@ -60,21 +60,33 @@ export const useThreatsStore = defineStore('threats', {
       try {
         const response = await axios.put(`${API_URL}/api/threats/${id}`, data)
         const updatedThreat = response.data.data
-        
-        // Update in list
+
         const index = this.threats.findIndex(t => t.id === id)
-        if (index !== -1) {
-          this.threats[index] = updatedThreat
-        }
-        
-        if (this.currentThreat?.id === id) {
-          this.currentThreat = updatedThreat
-        }
-        
+        if (index !== -1) this.threats[index] = updatedThreat
+        if (this.currentThreat?.id === id) this.currentThreat = updatedThreat
+
         return { success: true }
       } catch (error) {
         this.error = error.response?.data?.message || 'Failed to update threat'
         return { success: false, error: this.error }
+      }
+    },
+
+    async createThreat(data) {
+      this.error = null
+      try {
+        const response = await axios.post(`${API_URL}/api/threats`, data)
+        const created = response.data.data
+        this.threats = [created, ...this.threats]
+        return { success: true, data: created }
+      } catch (error) {
+        const err = error.response?.data
+        let msg = err?.message || 'Failed to create threat'
+        if (err?.errors && typeof err.errors === 'object') {
+          msg = Object.values(err.errors).flat().join(' ')
+        }
+        this.error = msg
+        return { success: false, error: msg }
       }
     }
   }

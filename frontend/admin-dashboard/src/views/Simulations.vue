@@ -135,9 +135,19 @@ const runDefensiveSimulation = async () => {
       attackData = { attack_type: defensiveForm.value.attackType }
     }
 
+    // Map attack type to simulation engine's expected type
+    const typeMap = {
+      sql_injection: 'trojan_attack',
+      xss: 'phishing_attack',
+      ddos: 'ddos_attack',
+      malware: 'ransomware_attack',
+      phishing: 'phishing_attack'
+    }
+    const simType = typeMap[defensiveForm.value.attackType] || 'generic_attack'
+
     const response = await axios.post(`${ML_SERVICE_URL}/api/v1/simulations/run`, {
-      simulation_type: 'defensive',
-      attack_data: attackData
+      type: simType,
+      threat_data: attackData
     })
 
     defensiveResult.value = response.data

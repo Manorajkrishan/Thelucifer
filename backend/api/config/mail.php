@@ -112,6 +112,12 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    'threat_alert' => [
+        'to' => array_filter(explode(',', env('THREAT_ALERT_EMAIL', ''))),
+        'enabled' => env('THREAT_ALERT_ENABLED', true),
+        'min_severity' => (int) env('THREAT_ALERT_MIN_SEVERITY', 7),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Markdown Mail Settings

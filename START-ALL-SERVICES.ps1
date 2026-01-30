@@ -29,15 +29,15 @@ Start-Sleep -Seconds 2
 Write-Host "4. Starting Admin Dashboard (Port 5173)..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\frontend\admin-dashboard'; Write-Host 'Admin Dashboard - Port 5173' -ForegroundColor Green; npm run dev"
 
-Write-Host "`n✅ All services starting in separate windows!" -ForegroundColor Green
-Write-Host "`n🌐 Access:" -ForegroundColor Cyan
+Write-Host "`nAll services starting in separate windows!" -ForegroundColor Green
+Write-Host "`nAccess:" -ForegroundColor Cyan
 Write-Host "   Portal: http://localhost:3000" -ForegroundColor White
 Write-Host "   Admin: http://localhost:5173" -ForegroundColor White
 Write-Host "   API: http://localhost:8000" -ForegroundColor White
 Write-Host "   ML Service: http://localhost:5000" -ForegroundColor White
-Write-Host "`n⏳ Wait 10-15 seconds for services to start..." -ForegroundColor Yellow
+Write-Host "`nWait 10-15 seconds for services to start." -ForegroundColor Yellow
 Write-Host "`nPress any key to run quick test..." -ForegroundColor Yellow
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+try { $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown') } catch { Read-Host "Press Enter to continue" }
 
 # Run quick test
 & "$PSScriptRoot\QUICK-TEST.ps1"

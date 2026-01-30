@@ -136,7 +136,8 @@ class CounterOffensiveEngine:
     def _network_saturation(self, attacker_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Simulate network saturation attack (DDoS-style)"""
         network_intel = attacker_profile.get('network_intelligence', {})
-        source_ip = network_intel.get('routes', [{}])[0].get('source_ip', 'unknown')
+        routes = network_intel.get('routes', [])
+        source_ip = routes[0].get('source_ip', 'unknown') if routes and len(routes) > 0 else 'unknown'
         
         # SIMULATED - No actual network traffic generated
         return {
@@ -161,7 +162,7 @@ class CounterOffensiveEngine:
         # SIMULATED - No actual malware deployed
         return {
             'action': 'malware_deployment',
-            'target': attacker_profile.get('network_intelligence', {}).get('routes', [{}])[0].get('source_ip', 'unknown'),
+            'target': (attacker_profile.get('network_intelligence', {}).get('routes', [{}])[0].get('source_ip', 'unknown') if attacker_profile.get('network_intelligence', {}).get('routes', []) and len(attacker_profile.get('network_intelligence', {}).get('routes', [])) > 0 else 'unknown'),
             'payload_id': payload_id,
             'payload_type': 'simulated_backdoor',
             'delivery_method': 'simulated_reverse_connection',
@@ -181,7 +182,7 @@ class CounterOffensiveEngine:
         # SIMULATED - No actual data destruction
         return {
             'action': 'data_destruction',
-            'target': attacker_profile.get('network_intelligence', {}).get('routes', [{}])[0].get('source_ip', 'unknown'),
+            'target': (attacker_profile.get('network_intelligence', {}).get('routes', [{}])[0].get('source_ip', 'unknown') if attacker_profile.get('network_intelligence', {}).get('routes', []) and len(attacker_profile.get('network_intelligence', {}).get('routes', [])) > 0 else 'unknown'),
             'method': 'simulated_secure_wipe',
             'targets': [
                 'simulated_databases',
@@ -201,7 +202,7 @@ class CounterOffensiveEngine:
         # SIMULATED - No actual infrastructure disruption
         return {
             'action': 'infrastructure_sabotage',
-            'target': network_intel.get('routes', [{}])[0].get('source_ip', 'unknown'),
+            'target': (network_intel.get('routes', [{}])[0].get('source_ip', 'unknown') if network_intel.get('routes', []) and len(network_intel.get('routes', [])) > 0 else 'unknown'),
             'methods': [
                 'simulated_service_disruption',
                 'simulated_database_corruption',

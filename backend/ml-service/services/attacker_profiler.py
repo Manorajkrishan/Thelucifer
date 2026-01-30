@@ -261,7 +261,8 @@ class AttackerProfiler:
                 score += 0.3
             
             # Match region (if available)
-            region = network_intel.get('routes', [{}])[0].get('geolocation', {}).get('region', '')
+            routes = network_intel.get('routes', [])
+            region = routes[0].get('geolocation', {}).get('region', '') if routes and len(routes) > 0 else ''
             if region and region in str(actor_data.get('regions', [])):
                 score += 0.2
             

@@ -24,7 +24,7 @@ export default function Docs() {
               <Link href="/docs" className="text-blue-600 font-semibold">
                 Docs
               </Link>
-              <Link href="/login" className="text-gray-600 hover:text-gray-900">
+              <Link href="/login" prefetch={false} className="text-gray-600 hover:text-gray-900">
                 Login
               </Link>
             </div>

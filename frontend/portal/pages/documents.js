@@ -46,16 +46,17 @@ export default function Documents() {
 
       const response = await fetch(url, {
         headers: {
+          'Accept': 'application/json',
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
         }
       })
 
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        throw new Error('Failed to fetch documents')
+        const msg = data?.message || data?.error || `Failed to fetch documents (${response.status})`
+        throw new Error(msg)
       }
-
-      const data = await response.json()
       let docsArray = []
       if (data.success && data.data) {
         if (data.data.data && Array.isArray(data.data.data)) {
@@ -300,22 +301,26 @@ export default function Documents() {
             })
           })
 
-          if (saveResponse.ok) {
-            const saveData = await saveResponse.json()
+          if (saveResponse.ok && saveData.success) {
             console.log('Document saved successfully:', saveData)
             setSuccess(`Successfully downloaded, learned, and saved! Document: ${data.result.filename}`)
             // Refresh documents list after a short delay to ensure database is updated
             setTimeout(() => {
               fetchDocuments(token)
-            }, 500)
+            }, 1000)
           } else {
-            const errorData = await saveResponse.json().catch(() => ({}))
-            console.error('Failed to save document:', errorData)
-            setError(`Document learned but failed to save: ${errorData.error || errorData.message || 'Unknown error'}`)
+            console.error('Failed to save document:', saveData)
+            const errorMsg = saveData.error || saveData.message || saveResponse.statusText || 'Unknown error'
+            setError(`Document learned but failed to save: ${errorMsg}`)
+            console.error('Save error details:', {
+              status: saveResponse.status,
+              statusText: saveResponse.statusText,
+              data: saveData
+            })
             // Still refresh to see if it was saved anyway
             setTimeout(() => {
               fetchDocuments(token)
-            }, 500)
+            }, 1000)
           }
         } catch (saveErr) {
           // Document learned but save failed
@@ -486,7 +491,7 @@ export default function Documents() {
           {!token ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
               <p className="text-yellow-800 mb-4">Please login to view documents</p>
-              <Link href="/login" className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+              <Link href="/login" prefetch={false} className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
                 Go to Login
               </Link>
             </div>

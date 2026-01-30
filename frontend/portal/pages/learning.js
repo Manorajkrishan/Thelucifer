@@ -131,7 +131,7 @@ export default function Learning() {
           {!token ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
               <p className="text-yellow-800 mb-4">Please login to view learning data</p>
-              <Link href="/login" className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+              <Link href="/login" prefetch={false} className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
                 Go to Login
               </Link>
             </div>
@@ -149,39 +149,57 @@ export default function Learning() {
               )}
 
               {/* Learning Summary */}
-              {summary && (
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-semibold">Learning Summary</h2>
-                    <button
-                      onClick={fetchLearningSummary}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-blue-50 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-gray-600 mb-1">Documents Processed</h3>
-                      <p className="text-3xl font-bold text-blue-600">{summary.total_documents || 0}</p>
-                    </div>
-                    
-                    <div className="bg-green-50 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-gray-600 mb-1">Patterns Learned</h3>
-                      <p className="text-3xl font-bold text-green-600">{summary.total_patterns_learned || 0}</p>
-                    </div>
-                    
-                    <div className="bg-red-50 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-gray-600 mb-1">Attack Techniques</h3>
-                      <p className="text-3xl font-bold text-red-600">{summary.unique_attack_techniques || 0}</p>
-                    </div>
-                    
-                    <div className="bg-purple-50 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-gray-600 mb-1">Exploit Patterns</h3>
-                      <p className="text-3xl font-bold text-purple-600">{summary.unique_exploit_patterns || 0}</p>
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-semibold">Learning Summary</h2>
+                  <button
+                    onClick={fetchLearningSummary}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                
+                {summary && (summary.total_documents === 0 && summary.total_patterns_learned === 0) ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                    <div className="text-4xl mb-4">📚</div>
+                    <h3 className="text-lg font-semibold text-yellow-900 mb-2">No Learning Data Yet</h3>
+                    <p className="text-yellow-800 mb-4">
+                      The system hasn't processed any documents yet. Process your documents to start learning!
+                    </p>
+                    <div className="space-y-2 text-sm text-yellow-700 text-left max-w-md mx-auto">
+                      <p className="font-semibold">To start learning:</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Go to <Link href="/documents" className="text-blue-600 hover:underline">Documents page</Link></li>
+                        <li>Upload documents or use Google Drive links</li>
+                        <li>Click "Process" on each document</li>
+                        <li>Come back here to see what was learned!</li>
+                      </ol>
                     </div>
                   </div>
+                ) : summary ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="bg-blue-50 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-gray-600 mb-1">Documents Processed</h3>
+                        <p className="text-3xl font-bold text-blue-600">{summary.total_documents || 0}</p>
+                      </div>
+                      
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-gray-600 mb-1">Patterns Learned</h3>
+                        <p className="text-3xl font-bold text-green-600">{summary.total_patterns_learned || 0}</p>
+                      </div>
+                      
+                      <div className="bg-red-50 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-gray-600 mb-1">Attack Techniques</h3>
+                        <p className="text-3xl font-bold text-red-600">{summary.unique_attack_techniques || 0}</p>
+                      </div>
+                      
+                      <div className="bg-purple-50 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-gray-600 mb-1">Exploit Patterns</h3>
+                        <p className="text-3xl font-bold text-purple-600">{summary.unique_exploit_patterns || 0}</p>
+                      </div>
+                    </div>
 
                   {/* Attack Techniques List */}
                   {summary.attack_techniques && summary.attack_techniques.length > 0 && (
@@ -216,8 +234,13 @@ export default function Learning() {
                       </div>
                     </div>
                   )}
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>Loading learning summary...</p>
+                  </div>
+                )}
+              </div>
 
               {/* Knowledge Graph Query */}
               <div className="bg-white rounded-lg shadow p-6">

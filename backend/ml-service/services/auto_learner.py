@@ -25,7 +25,7 @@ class AutoLearner:
         self.drive_downloader = DriveDownloader(download_dir)
         self.document_processor = DocumentProcessor()
         self.self_learning_engine = SelfLearningEngine()
-        self.knowledge_graph = KnowledgeGraphService(neo4j_driver) if neo4j_driver else None
+        self.knowledge_graph = KnowledgeGraphService(neo4j_driver)
         
         self.processed_documents = []
     
@@ -86,15 +86,19 @@ class AutoLearner:
                 document_id, file_path, file_type
             )
             
-            # Store in knowledge graph if available
-            if self.knowledge_graph:
-                self.knowledge_graph.store_document_knowledge(document_id, extracted_data)
+            # Store in knowledge graph (Neo4j or in-memory fallback)
+            self.knowledge_graph.store_document_knowledge(document_id, extracted_data)
             
             # Auto-learn from document if enabled
             learning_result = None
             if auto_learn:
                 logger.info("Auto-learning from document...")
-                learning_result = self.self_learning_engine.learn_from_documents([extracted_data])
+                try:
+                    learning_result = self.self_learning_engine.learn_from_documents([extracted_data])
+                    logger.info(f"Learning completed: {learning_result.get('patterns_learned', 0)} patterns learned")
+                except Exception as e:
+                    logger.error(f"Error during learning: {e}")
+                    learning_result = {'error': str(e)}
             
             # Track processed document
             self.processed_documents.append({
@@ -103,8 +107,10 @@ class AutoLearner:
                 'filename': filename,
                 'file_path': file_path,
                 'extracted_data': extracted_data,
-                'learning_result': learning_result
+                'learning_result': learning_result or {}
             })
+            
+            logger.info(f"Document tracked in learning system: {filename}")
             
             return {
                 'success': True,
@@ -210,9 +216,8 @@ class AutoLearner:
                 document_id, file_path, file_type
             )
             
-            # Store in knowledge graph
-            if self.knowledge_graph:
-                self.knowledge_graph.store_document_knowledge(document_id, extracted_data)
+            # Store in knowledge graph (Neo4j or in-memory fallback)
+            self.knowledge_graph.store_document_knowledge(document_id, extracted_data)
             
             # Auto-learn
             learning_result = None

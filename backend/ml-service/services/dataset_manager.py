@@ -170,9 +170,9 @@ class DatasetManager:
                     'status': 'downloaded'
                 })
         
-        # Check for custom datasets
+        # Check for custom datasets (top-level and datasets/custom/*)
         for custom_dir in self.datasets_dir.iterdir():
-            if custom_dir.is_dir() and custom_dir.name not in self.DATASETS:
+            if custom_dir.is_dir() and custom_dir.name not in self.DATASETS and custom_dir.name != 'custom':
                 metadata_path = custom_dir / "metadata.json"
                 if metadata_path.exists():
                     import json
@@ -181,6 +181,22 @@ class DatasetManager:
                     datasets.append({
                         'id': custom_dir.name,
                         'name': metadata.get('name', custom_dir.name),
+                        'path': str(custom_dir),
+                        'status': 'custom'
+                    })
+        custom_root = self.datasets_dir / 'custom'
+        if custom_root.exists():
+            for custom_dir in custom_root.iterdir():
+                if custom_dir.is_dir():
+                    metadata_path = custom_dir / "metadata.json"
+                    meta = {}
+                    if metadata_path.exists():
+                        import json
+                        with open(metadata_path, 'r') as f:
+                            meta = json.load(f)
+                    datasets.append({
+                        'id': f"custom/{custom_dir.name}",
+                        'name': meta.get('name', custom_dir.name),
                         'path': str(custom_dir),
                         'status': 'custom'
                     })
@@ -257,3 +273,43 @@ class DatasetManager:
         """
         
         return instructions
+
+    def download_from_url_to_project(self, url: str, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Download any file from URL and store in project datasets folder.
+        Use for your own datasets (CSV, JSON, ZIP, etc.). Extracts ZIP/TAR automatically.
+
+        Args:
+            url: Direct download URL
+            dataset_id: Optional folder name (default: derived from filename)
+
+        Returns:
+            {'success': True, 'dataset_id': str, 'path': str, 'file': str} or error dict
+        """
+        import re
+        try:
+            filename = urlparse(url).path.split('/')[-1] or 'dataset'
+            filename = filename.split('?')[0] or 'dataset'
+            if not dataset_id:
+                safe = re.sub(r'[^\w\-.]', '_', filename)
+                dataset_id = safe[:64] or 'custom_dataset'
+            if dataset_id in self.DATASETS:
+                dataset_id = f"custom_{dataset_id}"
+            dest_path = self.datasets_dir / 'custom' / dataset_id
+            dest_path.mkdir(parents=True, exist_ok=True)
+            result = self._download_from_url(url, dest_path, dataset_id)
+            metadata = {
+                'name': dataset_id,
+                'description': f"Downloaded from {url[:80]}{'...' if len(url) > 80 else ''}",
+                'format': 'csv' if filename.endswith('.csv') else 'json' if filename.endswith('.json') else 'auto',
+                'source_url': url,
+            }
+            metadata_path = dest_path / 'metadata.json'
+            import json
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            result['metadata'] = metadata
+            return result
+        except Exception as e:
+            logger.error(f"Error downloading from URL to project: {e}")
+            return {'success': False, 'error': str(e)}
