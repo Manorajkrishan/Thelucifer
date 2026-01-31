@@ -57,7 +57,14 @@ export default function Threats() {
         }
       })
 
-      if (handleUnauthorized(response)) return
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        setToken(null)
+        setError('Session expired. Please login again.')
+        setLoading(false)
+        return
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to fetch threats')
       }

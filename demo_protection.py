@@ -22,11 +22,14 @@ def run_firewall_demo():
     blocked = fw.block_ip(DEMO_IP, "Demo test")
     if blocked:
         fw.unblock_ip(DEMO_IP)  # Clean up immediately
+        proof = "Firewall rule was added then removed for " + DEMO_IP
+    else:
+        proof = "Run as Administrator to test real blocking (netsh requires elevation)"
     return {
         "name": "Windows Firewall (Real IP Blocking)",
         "passed": blocked,
         "detail": "Blocked and unblocked demo IP via netsh" if blocked else "Need Administrator to run firewall commands",
-        "proof": "Firewall rule was added then removed for " + DEMO_IP,
+        "proof": proof,
     }
 
 
