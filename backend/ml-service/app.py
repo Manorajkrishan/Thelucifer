@@ -90,6 +90,13 @@ target_validator = TargetValidator()
 counter_offensive_engine = CounterOffensiveEngine()
 war_loop = ContinuousWarLoop()
 
+# Initialize Real-Time Monitor
+from services.real_time_monitor import RealTimeMonitor
+real_time_monitor = RealTimeMonitor(
+    threat_detector=threat_detector,
+    counter_offensive_engine=counter_offensive_engine
+)
+
 
 class HealthCheck(Resource):
     """Health check endpoint"""
@@ -628,6 +635,45 @@ api.add_resource(CounterOffensiveResource, '/api/v1/counter-offensive/execute')
 api.add_resource(WarLoopResource, '/api/v1/war-loop')
 api.add_resource(TrainingResource, '/api/v1/training/train')
 
+
+# Real-Time Monitoring Resources
+class RealTimeMonitorStartResource(Resource):
+    """Start real-time attack monitoring"""
+    def post(self):
+        try:
+            result = real_time_monitor.start_monitoring()
+            return result, 200 if result['success'] else 400
+        except Exception as e:
+            logger.error(f"Error starting monitor: {e}")
+            return {'error': str(e)}, 500
+
+
+class RealTimeMonitorStopResource(Resource):
+    """Stop real-time attack monitoring"""
+    def post(self):
+        try:
+            result = real_time_monitor.stop_monitoring()
+            return result, 200 if result['success'] else 400
+        except Exception as e:
+            logger.error(f"Error stopping monitor: {e}")
+            return {'error': str(e)}, 500
+
+
+class RealTimeMonitorStatusResource(Resource):
+    """Get real-time monitor status"""
+    def get(self):
+        try:
+            status = real_time_monitor.get_status()
+            return status, 200
+        except Exception as e:
+            logger.error(f"Error getting monitor status: {e}")
+            return {'error': str(e)}, 500
+
+
+api.add_resource(RealTimeMonitorStartResource, '/api/v1/monitor/start')
+api.add_resource(RealTimeMonitorStopResource, '/api/v1/monitor/stop')
+api.add_resource(RealTimeMonitorStatusResource, '/api/v1/monitor/status')
+
 # Handle OPTIONS requests for CORS preflight
 @app.route('/api/v1/learning/drive-link', methods=['OPTIONS'])
 @app.route('/api/v1/learning/drive-links', methods=['OPTIONS'])
@@ -657,7 +703,10 @@ def index():
             'learning_summary': '/api/v1/learning/summary',
             'counter_offensive': '/api/v1/counter-offensive/execute',
             'war_loop': '/api/v1/war-loop',
-            'training': '/api/v1/training/train'
+            'training': '/api/v1/training/train',
+            'monitor_start': '/api/v1/monitor/start',
+            'monitor_stop': '/api/v1/monitor/stop',
+            'monitor_status': '/api/v1/monitor/status'
         }
     })
 

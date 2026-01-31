@@ -1,0 +1,19 @@
+# SentinelAI X - Real Protection System Requirements
+
+# Network packet capture and analysis
+scapy>=2.5.0
+
+# System and process monitoring
+psutil>=5.9.0
+
+# Malware scanning with YARA rules
+yara-python>=4.3.0
+
+# HTTP requests for threat intelligence
+requests>=2.31.0
+
+# File system monitoring
+watchdog>=3.0.0
+
+# Windows-specific (automatically installed on Windows)
+# pywin32>=305

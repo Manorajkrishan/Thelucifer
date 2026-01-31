@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
+import { handleUnauthorized } from '../lib/api'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -48,6 +49,7 @@ export default function Analytics() {
         }
       })
 
+      if (handleUnauthorized(threatsResponse)) return
       if (threatsResponse.ok) {
         const threatsData = await threatsResponse.json()
         let threatsArray = []
@@ -67,6 +69,7 @@ export default function Analytics() {
         }
       })
 
+      if (handleUnauthorized(docsResponse)) return
       if (docsResponse.ok) {
         const docsData = await docsResponse.json()
         if (docsData.success && docsData.data) {

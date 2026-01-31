@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { handleUnauthorized } from '../../lib/api'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -35,6 +36,7 @@ export default function ThreatDetail() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Failed to fetch threat')
       }

@@ -4,11 +4,14 @@ import axios from 'axios'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    user: null,
-    token: localStorage.getItem('token'),
-    isAuthenticated: false
-  }),
+  state: () => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null
+    return {
+      user: null,
+      token,
+      isAuthenticated: !!token
+    }
+  },
 
   actions: {
     async login(credentials) {
@@ -54,7 +57,7 @@ export const useAuthStore = defineStore('auth', {
       if (this.token) {
         this.isAuthenticated = true
         axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
-        
+
         // Verify token is still valid
         axios.get(`${API_URL}/api/user`)
           .then(response => {

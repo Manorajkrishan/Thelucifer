@@ -28,7 +28,7 @@ class Kernel extends HttpKernel
 
         'api' => [
             // \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,  // Disabled for token-based auth
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
+            // \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',  // Disabled for development
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
     ];

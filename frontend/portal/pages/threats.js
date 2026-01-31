@@ -57,6 +57,7 @@ export default function Threats() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Failed to fetch threats')
       }
@@ -104,6 +105,8 @@ export default function Threats() {
         body: JSON.stringify(newThreat)
       })
 
+      if (handleUnauthorized(response)) return
+
       const data = await response.json()
 
       if (!response.ok) {
@@ -139,6 +142,7 @@ export default function Threats() {
         body: JSON.stringify({ status: newStatus })
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Failed to update threat')
       }
@@ -162,6 +166,7 @@ export default function Threats() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Failed to delete threat')
       }

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { handleUnauthorized } from '../lib/api'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const ML_SERVICE_URL = process.env.NEXT_PUBLIC_ML_SERVICE_URL || 'http://localhost:5000'
@@ -51,6 +52,8 @@ export default function Documents() {
           'Content-Type': 'application/json'
         }
       })
+
+      if (handleUnauthorized(response)) return
 
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
@@ -116,6 +119,8 @@ export default function Documents() {
         body: formData
       })
 
+      if (handleUnauthorized(response)) return
+
       const data = await response.json()
 
       if (!response.ok) {
@@ -167,6 +172,7 @@ export default function Documents() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Download failed')
       }
@@ -200,6 +206,8 @@ export default function Documents() {
         }
       })
 
+      if (handleUnauthorized(response)) return
+
       const data = await response.json()
 
       if (!response.ok) {
@@ -228,6 +236,7 @@ export default function Documents() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (!response.ok) {
         throw new Error('Delete failed')
       }
@@ -301,6 +310,8 @@ export default function Documents() {
             })
           })
 
+          if (handleUnauthorized(saveResponse)) return
+          const saveData = await saveResponse.json().catch(() => ({}))
           if (saveResponse.ok && saveData.success) {
             console.log('Document saved successfully:', saveData)
             setSuccess(`Successfully downloaded, learned, and saved! Document: ${data.result.filename}`)
@@ -415,6 +426,7 @@ export default function Documents() {
                   }
                 })
               })
+              if (handleUnauthorized(saveResponse)) return
               if (saveResponse.ok) {
                 savedCount++
               }

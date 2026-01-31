@@ -40,6 +40,7 @@ export default function Simulations() {
         }
       })
 
+      if (handleUnauthorized(response)) return
       if (response.ok) {
         const data = await response.json()
         let threatsArray = []

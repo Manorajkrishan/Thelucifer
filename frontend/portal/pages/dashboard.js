@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { handleUnauthorized } from '../lib/api'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -39,6 +40,7 @@ export default function Dashboard() {
         }
       })
 
+      if (handleUnauthorized(statsResponse)) return
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
         setStats(statsData.data || statsData)
@@ -52,6 +54,7 @@ export default function Dashboard() {
         }
       })
 
+      if (handleUnauthorized(threatsResponse)) return
       if (threatsResponse.ok) {
         const threatsData = await threatsResponse.json()
         let threatsArray = []
@@ -71,6 +74,7 @@ export default function Dashboard() {
         }
       })
 
+      if (handleUnauthorized(docsResponse)) return
       if (docsResponse.ok) {
         const docsData = await docsResponse.json()
         if (docsData.success && docsData.data) {
