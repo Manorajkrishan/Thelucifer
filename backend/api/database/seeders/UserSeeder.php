@@ -4,25 +4,22 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Create default admin user
-        User::create([
-            'name' => 'Admin',
-            'email' => 'admin@sentinelai.com',
-            'password' => Hash::make('admin123'),
-            'email_verified_at' => now(),
-        ]);
-
-        // Create test user
-        User::create([
-            'name' => 'Test User',
-            'email' => 'test@sentinelai.com',
-            'password' => Hash::make('test123'),
+        // Never seed known credentials; explicit local/test-only opt in.
+        if (!app()->environment(['local', 'testing'])) {
+            return;
+        }
+        $password = env('DEV_SEED_PASSWORD', '');
+        if (strlen($password) < 12 || in_array($password, ['admin123', 'test123'], true)) {
+            return;
+        }
+        User::updateOrCreate(['email' => 'admin@sentinelai.com'], [
+            'name' => 'Development Admin',
+            'password' => $password,
             'email_verified_at' => now(),
         ]);
     }

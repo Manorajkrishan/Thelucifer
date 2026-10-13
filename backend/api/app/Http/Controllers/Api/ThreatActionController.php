@@ -16,7 +16,7 @@ class ThreatActionController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = ThreatAction::query();
+        $query = ThreatAction::whereHas('threat', fn ($q) => $q->where('user_id', auth()->id()));
 
         // Filter by threat_id
         if ($request->has('threat_id')) {
@@ -64,6 +64,8 @@ class ThreatActionController extends Controller
             ], 422);
         }
 
+        abort_unless(Threat::where('id', $request->threat_id)->where('user_id', auth()->id())->exists(), 404);
+        abort_if($request->filled('status') && $request->status !== 'pending', 403, 'Action execution requires a verified worker');
         try {
             $action = ThreatAction::create([
                 'threat_id' => $request->threat_id,
@@ -92,6 +94,7 @@ class ThreatActionController extends Controller
      */
     public function show(ThreatAction $threatAction): JsonResponse
     {
+        abort_unless($threatAction->threat && $threatAction->threat->user_id === auth()->id(), 404);
         $threatAction->load('threat');
 
         return response()->json([
@@ -105,6 +108,7 @@ class ThreatActionController extends Controller
      */
     public function update(Request $request, ThreatAction $threatAction): JsonResponse
     {
+        abort_unless($threatAction->threat && $threatAction->threat->user_id === auth()->id(), 404);
         $validator = Validator::make($request->all(), [
             'status' => 'sometimes|string|in:pending,executing,completed,failed',
             'action_details' => 'sometimes|array',
@@ -120,6 +124,7 @@ class ThreatActionController extends Controller
             ], 422);
         }
 
+        abort_if($request->hasAny(['status', 'result', 'action_details']), 403, 'Direct action execution or evidence editing is disabled');
         try {
             // If status is completed or failed, set executed_at
             if ($request->has('status') && in_array($request->status, ['completed', 'failed'])) {
@@ -147,6 +152,7 @@ class ThreatActionController extends Controller
      */
     public function destroy(ThreatAction $threatAction): JsonResponse
     {
+        abort_unless($threatAction->threat && $threatAction->threat->user_id === auth()->id(), 404);
         try {
             $threatAction->delete();
 
@@ -180,8 +186,8 @@ class ThreatActionController extends Controller
             ], 422);
         }
 
+        $threat = Threat::where('user_id', auth()->id())->findOrFail($request->threat_id);
         try {
-            $threat = Threat::findOrFail($request->threat_id);
             $actions = [];
 
             // Auto-create actions based on threat severity

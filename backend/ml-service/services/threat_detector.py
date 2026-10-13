@@ -1,135 +1,124 @@
 """
-Threat Detection Engine
-Detects and classifies cyber threats using ML models
-"""
+Threat detection: fail closed when a trained and trusted model is unavailable.
 
+A deployment must explicitly provision a trusted, versioned scikit-learn pipeline
+artifact. Never load a model from user input, URLs, or uploaded documents.
+"""
 import logging
-from typing import Dict, List, Any
-import numpy as np
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-import pickle
 import os
+from pathlib import Path
+from typing import Dict, Any
+
+import joblib
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
 class ThreatDetector:
-    """Detect and classify cyber threats"""
-    
-    def __init__(self):
-        self.models = {}
-        self.scaler = StandardScaler()
-        
-        # Initialize anomaly detection model
-        self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)
-        
-        # Threat type classifiers (can be loaded from trained models)
+    """Inference-only anomaly detector. Training and model promotion are separate."""
+
+    FEATURE_FIELDS = (
+        ("network", "packet_count"),
+        ("network", "bytes_transferred"),
+        ("network", "connection_count"),
+        ("network", "port_count"),
+        ("system_logs", "process_count"),
+        ("system_logs", "file_access_count"),
+        ("behavior", "suspicious_file_access"),
+        ("behavior", "unusual_network_activity"),
+        ("behavior", "privilege_escalation"),
+    )
+
+    def __init__(self, model_path=None):
+        self.model = None
+        self.model_path = model_path if model_path is not None else os.getenv("THREAT_MODEL_PATH", "")
+        if self.model_path:
+            self._load_model(self.model_path)
         self.threat_classifiers = {
-            'malware': self._classify_malware,
-            'trojan': self._classify_trojan,
-            'ransomware': self._classify_ransomware,
-            'phishing': self._classify_phishing,
-            'zero_day': self._classify_zero_day,
+            "malware": self._classify_malware,
+            "trojan": self._classify_trojan,
+            "ransomware": self._classify_ransomware,
+            "phishing": self._classify_phishing,
+            "zero_day": self._classify_zero_day,
         }
-    
+
+    def _load_model(self, path):
+        """Only deployer-controlled model artifacts may be deserialized."""
+        try:
+            model_file = Path(path)
+            if not model_file.is_file():
+                logger.error("Configured threat model does not exist")
+                return
+            model = joblib.load(model_file)
+            if not callable(getattr(model, "predict", None)):
+                logger.error("Configured threat model does not expose predict")
+                return
+            if getattr(model, "n_features_in_", len(self.FEATURE_FIELDS)) != len(self.FEATURE_FIELDS):
+                logger.error("Configured threat model has the wrong feature dimension")
+                return
+            self.model = model
+        except Exception:
+            logger.exception("Unable to load configured threat model")
+
+    def _extract_features(self, data: Dict[str, Any]) -> np.ndarray:
+        if not isinstance(data, dict) or not any(
+            isinstance(data.get(group), dict) for group, _ in self.FEATURE_FIELDS
+        ):
+            raise ValueError("At least one supported telemetry object is required")
+        features = []
+        for group, field in self.FEATURE_FIELDS:
+            raw = data.get(group, {})
+            if raw is None:
+                raw = {}
+            if not isinstance(raw, dict):
+                raise ValueError(f"{group} must be an object")
+            value = raw.get(field, 0)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{group}.{field} must be numeric")
+            if not np.isfinite(value) or value < 0:
+                raise ValueError(f"{group}.{field} must be finite and non-negative")
+            features.append(float(value))
+        return np.asarray([features], dtype=np.float64)
+
+    def _detect_anomaly(self, features: np.ndarray) -> bool:
+        if self.model is None:
+            raise RuntimeError("threat_model_unavailable")
+        prediction = self.model.predict(features)
+        if len(prediction) != 1 or prediction[0] not in (-1, 1):
+            raise RuntimeError("invalid_model_prediction")
+        return bool(prediction[0] == -1)
+
     def detect_threat(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Detect and classify cyber threats from input data
-        
-        Args:
-            data: Input data containing network traffic, system logs, etc.
-        
-        Returns:
-            Detection results with threat classification and confidence
-        """
+        """Never report detection on invalid data or inference failures."""
         try:
             features = self._extract_features(data)
-            
-            # Anomaly detection
-            is_anomaly = self._detect_anomaly(features)
-            
-            if not is_anomaly:
-                return {
-                    'threat_detected': False,
-                    'confidence': 0.0,
-                    'classification': None
-                }
-            
-            # Classify threat type
-            classification_result = self._classify_threat(data, features)
-            
-            # Calculate severity
-            severity = self._calculate_severity(data, classification_result)
-            
+        except (ValueError, TypeError, OverflowError) as exc:
             return {
-                'threat_detected': True,
-                'classification': classification_result['type'],
-                'confidence': classification_result['confidence'],
-                'severity': severity,
-                'description': classification_result['description'],
-                'recommendations': classification_result.get('recommendations', [])
+                "status": "invalid_input", "threat_detected": False,
+                "confidence": None, "reason": str(exc),
             }
-            
-        except Exception as e:
-            logger.error(f"Error detecting threat: {str(e)}")
-            raise
-    
-    def _extract_features(self, data: Dict[str, Any]) -> np.ndarray:
-        """Extract features from input data for ML models"""
-        features = []
-        
-        # Network traffic features
-        if 'network' in data:
-            network = data['network']
-            features.extend([
-                network.get('packet_count', 0),
-                network.get('bytes_transferred', 0),
-                network.get('connection_count', 0),
-                network.get('port_count', 0),
-            ])
-        
-        # System log features
-        if 'system_logs' in data:
-            logs = data['system_logs']
-            features.extend([
-                len(logs.get('error_logs', [])),
-                len(logs.get('warning_logs', [])),
-                logs.get('process_count', 0),
-                logs.get('file_access_count', 0),
-            ])
-        
-        # Behavioral features
-        if 'behavior' in data:
-            behavior = data['behavior']
-            features.extend([
-                behavior.get('suspicious_file_access', 0),
-                behavior.get('unusual_network_activity', 0),
-                behavior.get('privilege_escalation', 0),
-            ])
-        
-        # If no features extracted, return zeros
-        if not features:
-            features = [0] * 11
-        
-        return np.array(features).reshape(1, -1)
-    
-    def _detect_anomaly(self, features: np.ndarray) -> bool:
-        """Detect if the features represent an anomaly"""
         try:
-            # Normalize features
-            features_scaled = self.scaler.fit_transform(features)
-            
-            # Predict anomaly
-            prediction = self.anomaly_detector.predict(features_scaled)
-            
-            # -1 means anomaly, 1 means normal
-            return prediction[0] == -1
-            
-        except Exception as e:
-            logger.warning(f"Error in anomaly detection: {e}")
-            return True  # Assume anomaly if detection fails
-    
+            is_anomaly = self._detect_anomaly(features)
+        except Exception:
+            logger.exception("Threat inference unavailable")
+            return {
+                "status": "unavailable", "threat_detected": False,
+                "confidence": None, "reason": "model_inference_unavailable",
+            }
+        if not is_anomaly:
+            return {"status": "ok", "threat_detected": False, "confidence": 0.0, "classification": None}
+        classification = self._classify_threat(data, features)
+        return {
+            "status": "ok", "threat_detected": True,
+            "classification": classification["type"],
+            "confidence": classification["confidence"],
+            "confidence_source": "heuristic_not_calibrated",
+            "severity": self._calculate_severity(data, classification),
+            "description": classification["description"],
+            "recommendations": classification.get("recommendations", []),
+        }
+
     def _classify_threat(self, data: Dict[str, Any], features: np.ndarray) -> Dict[str, Any]:
         """Classify the type of threat"""
         results = []
