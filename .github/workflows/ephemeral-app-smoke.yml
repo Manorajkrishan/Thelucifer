@@ -170,3 +170,76 @@ jobs:
           fi
           grep -Eqi '(<html|id="app")' /tmp/lucifer-admin.html
           echo "PASS: Vue admin dashboard compiled and served its entry page"
+
+  ml-service-smoke:
+    name: Start Python ML API and verify safe failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ml-service/requirements.txt
+      - name: Install CPU-only PyTorch and ML requirements
+        working-directory: backend/ml-service
+        run: |
+          python -m pip install --disable-pip-version-check 'torch==2.2.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Start Flask API on isolated runner
+        shell: bash
+        working-directory: backend/ml-service
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          TOKENIZERS_PARALLELISM: 'false'
+          NLTK_DATA: /tmp/lucifer-nltk-data
+          NEO4J_URI: bolt://127.0.0.1:1
+        run: |
+          set -euo pipefail
+          export ML_INTERNAL_TOKEN
+          ML_INTERNAL_TOKEN=$(openssl rand -hex 32)
+          mkdir -p "$NLTK_DATA"
+          python -m nltk.downloader -d "$NLTK_DATA" punkt stopwords
+          python app.py >/tmp/lucifer-ml.log 2>&1 &
+          ml_pid=$!
+          trap 'kill $ml_pid 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:5000/health >/tmp/lucifer-ml-health.json 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$ml_pid" 2>/dev/null; then break; fi
+            sleep 2
+          done
+          if [ "$ready" != 1 ]; then
+            tail -n 120 /tmp/lucifer-ml.log
+            exit 1
+          fi
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          base = "http://127.0.0.1:5000"
+          with urllib.request.urlopen(base + "/health", timeout=10) as response:
+              assert response.status == 200
+              assert json.load(response)["status"] == "healthy"
+          payload = json.dumps({"network": {"connection_count": 95}}).encode()
+          req = urllib.request.Request(base + "/api/v1/threats/detect",
+              data=payload, headers={"Content-Type": "application/json"}, method="POST")
+          try:
+              urllib.request.urlopen(req, timeout=10)
+              raise AssertionError("unauthenticated detection unexpectedly succeeded")
+          except urllib.error.HTTPError as e:
+              assert e.code == 401, e.code
+          req.add_header("Authorization", "Bearer " + os.environ["ML_INTERNAL_TOKEN"])
+          try:
+              urllib.request.urlopen(req, timeout=10)
+              raise AssertionError("untrained model unexpectedly claimed a successful detection")
+          except urllib.error.HTTPError as e:
+              assert e.code == 503, e.code
+              body = json.load(e)
+              assert body["detection"]["status"] == "unavailable", body
+              assert body["detection"]["threat_detected"] is False
+          print("PASS: ML API started; unauthorized request rejected; untrained model returns 503 (not false alert)")
+          PY
