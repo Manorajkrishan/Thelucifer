@@ -66,3 +66,11 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# Ignore generated environment snapshots and private key files
+.env.*
+!.env.example
+!**/.env.example
+*.env.backup
+*.pem
+*.p12

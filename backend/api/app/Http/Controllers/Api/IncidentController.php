@@ -15,7 +15,7 @@ class IncidentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Incident::query();
+        $query = Incident::whereHas('threat', fn ($q) => $q->where('user_id', auth()->id()));
 
         // Filter by status
         if ($request->has('status')) {
@@ -63,6 +63,10 @@ class IncidentController extends Controller
             ], 422);
         }
 
+        if ($request->filled('threat_id')) {
+            abort_unless(\App\Models\Threat::where('id', $request->threat_id)->where('user_id', auth()->id())->exists(), 404);
+        }
+
         try {
             // If no threat_id provided, create a default threat or make it nullable
             $threatId = $request->threat_id;
@@ -108,6 +112,7 @@ class IncidentController extends Controller
      */
     public function show(Incident $incident): JsonResponse
     {
+        abort_unless($incident->threat && $incident->threat->user_id === auth()->id(), 404);
         $incident->load('threat', 'responses');
 
         return response()->json([
@@ -121,6 +126,7 @@ class IncidentController extends Controller
      */
     public function update(Request $request, Incident $incident): JsonResponse
     {
+        abort_unless($incident->threat && $incident->threat->user_id === auth()->id(), 404);
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
@@ -158,6 +164,7 @@ class IncidentController extends Controller
      */
     public function destroy(Incident $incident): JsonResponse
     {
+        abort_unless($incident->threat && $incident->threat->user_id === auth()->id(), 404);
         try {
             $incident->delete();
 

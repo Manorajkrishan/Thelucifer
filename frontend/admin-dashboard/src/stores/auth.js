@@ -37,7 +37,7 @@ export const useAuthStore = defineStore('auth', {
         if (status === 401) {
           return {
             success: false,
-            error: 'Invalid email or password. If you haven\'t yet, run .\\CREATE-ADMIN-USER.ps1 then use admin@sentinelai.com / admin123.'
+            error: 'Invalid email or password.'
           }
         }
         return { success: false, error: msg }

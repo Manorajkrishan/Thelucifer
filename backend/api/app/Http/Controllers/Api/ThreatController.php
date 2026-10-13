@@ -18,7 +18,7 @@ class ThreatController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Threat::query();
+        $query = Threat::where('user_id', auth()->id());
 
         // Filter by status
         if ($request->has('status')) {
@@ -102,6 +102,7 @@ class ThreatController extends Controller
      */
     public function show(Threat $threat): JsonResponse
     {
+        abort_unless($threat->user_id === auth()->id(), 404);
         $threat->load(['incidents', 'actions']);
 
         return response()->json([
@@ -115,6 +116,7 @@ class ThreatController extends Controller
      */
     public function update(Request $request, Threat $threat): JsonResponse
     {
+        abort_unless($threat->user_id === auth()->id(), 404);
         $validator = Validator::make($request->all(), [
             'status' => 'sometimes|string|in:detected,analyzing,mitigated,resolved',
             'severity' => 'sometimes|integer|min:1|max:10',
@@ -147,6 +149,7 @@ class ThreatController extends Controller
      */
     public function destroy(Threat $threat): JsonResponse
     {
+        abort_unless($threat->user_id === auth()->id(), 404);
         $threat->delete();
 
         return response()->json([
@@ -161,17 +164,17 @@ class ThreatController extends Controller
     public function statistics(): JsonResponse
     {
         $stats = [
-            'total' => Threat::count(),
-            'by_status' => Threat::selectRaw('status, count(*) as count')
+            'total' => Threat::where('user_id', auth()->id())->count(),
+            'by_status' => Threat::where('user_id', auth()->id())->selectRaw('status, count(*) as count')
                 ->groupBy('status')
                 ->pluck('count', 'status'),
-            'by_type' => Threat::selectRaw('type, count(*) as count')
+            'by_type' => Threat::where('user_id', auth()->id())->selectRaw('type, count(*) as count')
                 ->groupBy('type')
                 ->pluck('count', 'type'),
-            'by_severity' => Threat::selectRaw('severity, count(*) as count')
+            'by_severity' => Threat::where('user_id', auth()->id())->selectRaw('severity, count(*) as count')
                 ->groupBy('severity')
                 ->pluck('count', 'severity'),
-            'recent_24h' => Threat::where('detected_at', '>=', now()->subDay())->count(),
+            'recent_24h' => Threat::where('user_id', auth()->id())->where('detected_at', '>=', now()->subDay())->count(),
             'by_date' => $this->threatsByDate(7),
         ];
 
@@ -191,7 +194,7 @@ class ThreatController extends Controller
             $d = now()->subDays($i)->format('Y-m-d');
             $out[] = [
                 'date' => $d,
-                'count' => Threat::whereDate('detected_at', $d)->count(),
+                'count' => Threat::where('user_id', auth()->id())->whereDate('detected_at', $d)->count(),
             ];
         }
         return $out;

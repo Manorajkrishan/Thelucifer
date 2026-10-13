@@ -5,24 +5,25 @@
 
 const express = require('express');
 const http = require('http');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 const redis = require('redis');
 const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
+app.use(express.json({ limit: '64kb' }));
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: (process.env.SOCKET_ALLOWED_ORIGINS || "").split(",").map(x => x.trim()).filter(Boolean),
     methods: ["GET", "POST"]
   }
 });
 
 // Redis client
 const redisClient = redis.createClient({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379
+  socket: { host: process.env.REDIS_HOST || 'localhost', port: Number(process.env.REDIS_PORT || 6379) }
 });
 
 redisClient.on('error', (err) => {
@@ -44,6 +45,7 @@ io.on('connection', (socket) => {
   connectedClients.set(socket.id, {
     socket,
     userId: null,
+    token: null,
     rooms: []
   });
 
@@ -57,9 +59,10 @@ io.on('connection', (socket) => {
         }
       });
 
-      if (response.data) {
+      if (response.data?.user?.id) {
         const client = connectedClients.get(socket.id);
-        client.userId = response.data.id;
+        client.userId = response.data.user.id;
+        client.token = data.token;
         client.rooms.push(`user:${client.userId}`);
         
         socket.join(`user:${client.userId}`);
@@ -75,8 +78,11 @@ io.on('connection', (socket) => {
 
   // Join room for threat monitoring
   socket.on('join:threats', () => {
-    socket.join('threats');
     const client = connectedClients.get(socket.id);
+    if (!client?.userId) {
+      return socket.emit('joined:threats', { success: false, error: 'Authentication required' });
+    }
+    socket.join('threats');
     if (!client.rooms.includes('threats')) {
       client.rooms.push('threats');
     }
@@ -94,7 +100,9 @@ io.on('connection', (socket) => {
   // Handle real-time threat detection request
   socket.on('monitor:threats', async (data) => {
     console.log(`Starting threat monitoring for client: ${socket.id}`);
-    // Start monitoring (polling or event-driven)
+    if (!connectedClients.get(socket.id)?.userId) {
+      return socket.emit('threats:error', { error: 'Authentication required' });
+    }
     startThreatMonitoring(socket);
   });
 
@@ -126,7 +134,10 @@ function startThreatMonitoring(socket) {
   const interval = setInterval(async () => {
     try {
       // Get latest threats from API
+      const token = connectedClients.get(socket.id)?.token;
+      if (!token) return stopThreatMonitoring(socket);
       const response = await axios.get(`${API_URL}/api/threats`, {
+        headers: { Authorization: `Bearer ${token}` },
         params: {
           per_page: 10,
           status: 'detected'
@@ -170,8 +181,7 @@ function stopThreatMonitoring(socket) {
 // Redis subscriber for real-time events
 async function setupRedisSubscriber() {
   const subscriber = redis.createClient({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379
+    socket: { host: process.env.REDIS_HOST || 'localhost', port: Number(process.env.REDIS_PORT || 6379) }
   });
 
   await subscriber.connect();
@@ -195,7 +205,7 @@ async function setupRedisSubscriber() {
 
   await subscriber.subscribe('alerts:critical', (message) => {
     const alert = JSON.parse(message);
-    io.emit('alert:critical', {
+    io.to('threats').emit('alert:critical', {
       timestamp: new Date().toISOString(),
       alert: alert
     });
@@ -216,11 +226,19 @@ app.get('/health', (req, res) => {
 
 // API endpoint to trigger real-time threat detection
 app.post('/api/threats/detect', async (req, res) => {
+  const configured = process.env.ML_INTERNAL_TOKEN || '';
+  const supplied = req.get('X-Internal-Token') || '';
+  if (!configured || Buffer.byteLength(supplied) !== Buffer.byteLength(configured) ||
+      !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(configured))) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
   try {
     const threatData = req.body;
 
     // Send to ML service for detection
-    const mlResponse = await axios.post(`${ML_SERVICE_URL}/api/v1/threats/detect`, threatData);
+    const mlResponse = await axios.post(`${ML_SERVICE_URL}/api/v1/threats/detect`, threatData, {
+      headers: { Authorization: `Bearer ${configured}` }, timeout: 10000
+    });
 
     if (mlResponse.data && mlResponse.data.detection && mlResponse.data.detection.threat_detected) {
       // Broadcast to all connected clients

@@ -18,7 +18,7 @@ class DocumentController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = Document::query();
+            $query = Document::where('uploaded_by', auth()->id());
 
             if ($request->has('status')) {
                 $query->where('status', $request->status);
@@ -85,7 +85,7 @@ class DocumentController extends Controller
             $validator = Validator::make($request->all(), [
                 'title' => 'required|string|max:255',
                 'filename' => 'required|string|max:255',
-                'file_path' => 'required|string',
+                'file_path' => ['required', 'string', 'regex:/^downloaded\\/[a-zA-Z0-9._\\/-]+$/', 'not_regex:/\\.\\./'],
                 'file_type' => 'required|string|in:pdf,docx,txt,doc',
                 'file_size' => 'nullable|integer|min:0',
                 'status' => 'nullable|string|in:uploaded,processing,processed,failed',
@@ -258,6 +258,7 @@ class DocumentController extends Controller
      */
     public function show(Document $document): JsonResponse
     {
+        abort_unless($document->uploaded_by === auth()->id(), 404);
         $document->load('knowledgeEntries');
 
         return response()->json([
@@ -271,6 +272,7 @@ class DocumentController extends Controller
      */
     public function download(Document $document)
     {
+        abort_unless($document->uploaded_by === auth()->id(), 404);
         if (!Storage::disk('public')->exists($document->file_path)) {
             return response()->json([
                 'success' => false,
@@ -286,6 +288,7 @@ class DocumentController extends Controller
      */
     public function destroy(Document $document): JsonResponse
     {
+        abort_unless($document->uploaded_by === auth()->id(), 404);
         // Delete file from storage
         Storage::disk('public')->delete($document->file_path);
 
@@ -302,6 +305,7 @@ class DocumentController extends Controller
      */
     public function process(Document $document): JsonResponse
     {
+        abort_unless($document->uploaded_by === auth()->id(), 404);
         try {
             $result = $this->triggerDocumentLearning($document);
             
@@ -325,7 +329,12 @@ class DocumentController extends Controller
     private function triggerDocumentLearning(Document $document): ?array
     {
         try {
-            $mlServiceUrl = env('ML_SERVICE_URL', 'http://localhost:5000');
+            $mlServiceUrl = config('services.ml.url');
+            $mlToken = config('services.ml.internal_token');
+            if (!$mlToken) {
+                \Log::error('ML_INTERNAL_TOKEN is not configured');
+                return null;
+            }
             
             // For Drive downloads, ML service already processed the document
             // So we just need to trigger learning from the extracted data
@@ -362,12 +371,12 @@ class DocumentController extends Controller
 
             \Log::info('Sending document to ML service for processing', [
                 'document_id' => $document->id,
-                'file_path' => $fullPath,
+                'file_path' => $filePath,
                 'file_type' => $document->file_type,
             ]);
 
             // Send document to ML service for processing and learning
-            $response = Http::timeout(60)->post("{$mlServiceUrl}/api/v1/documents/process", [
+            $response = Http::withToken($mlToken)->timeout(60)->post("{$mlServiceUrl}/api/v1/documents/process", [
                 'document_id' => "doc_{$document->id}",
                 'file_path' => $fullPath,
                 'file_type' => $document->file_type,
@@ -414,7 +423,7 @@ class DocumentController extends Controller
         try {
             $mlServiceUrl = env('ML_SERVICE_URL', 'http://localhost:5000');
             
-            Http::timeout(30)->post("{$mlServiceUrl}/api/v1/learning/learn", [
+            Http::withToken($mlToken)->timeout(30)->post("{$mlServiceUrl}/api/v1/learning/learn", [
                 'type' => 'documents',
                 'documents' => [$extractedData],
             ]);

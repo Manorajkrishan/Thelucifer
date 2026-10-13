@@ -5,6 +5,7 @@ AI/ML Engine for document learning, threat detection, and simulation
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from security import internal_api_error, trusted_document_path
 from flask_restful import Api, Resource
 import redis
 import psycopg2
@@ -30,15 +31,21 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-# Configure CORS to allow all origins (for development)
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-        "supports_credentials": False
-    }
-})
+# This is an internal service; browser CORS is disabled unless explicitly configured.
+allowed_origins = [x.strip() for x in os.getenv("ML_CORS_ORIGINS", "").split(",") if x.strip()]
+if allowed_origins:
+    CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+
+@app.before_request
+def authorize_internal_request():
+    if request.method == "GET" and request.path in ("/", "/health"):
+        return None
+    error = internal_api_error()
+    if error:
+        reason, status = error
+        return jsonify({"success": False, "error": reason}), status
+    return None
+
 api = Api(app)
 
 # Configure logging
@@ -61,7 +68,7 @@ def get_db_connection():
         host=os.getenv('POSTGRES_HOST', 'localhost'),
         database=os.getenv('POSTGRES_DB', 'sentinelai'),
         user=os.getenv('POSTGRES_USER', 'sentinelai_user'),
-        password=os.getenv('POSTGRES_PASSWORD', 'sentinelai_password')
+        password=os.environ['POSTGRES_PASSWORD']
     )
 
 # Initialize Neo4j driver (optional; fallback to in-memory knowledge graph if unavailable)
@@ -69,7 +76,7 @@ neo4j_driver = None
 try:
     _driver = GraphDatabase.driver(
         os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
-        auth=(os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', 'sentinelai_password'))
+        auth=(os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', ''))
     )
     _driver.verify_connectivity()
     neo4j_driver = _driver
@@ -120,11 +127,11 @@ class DocumentProcessResource(Resource):
             if not all([document_id, file_path, file_type]):
                 return {'error': 'Missing required fields'}, 400
 
-            # Verify file exists
-            import os
-            if not os.path.exists(file_path):
-                logger.error(f"File not found: {file_path}")
-                return {'error': f'File not found: {file_path}'}, 404
+            # Resolve relative paths only inside the configured shared ingest root.
+            try:
+                file_path = trusted_document_path(file_path)
+            except (OSError, ValueError):
+                return {'error': 'Document is outside the trusted ingest directory or unavailable'}, 400
 
             # Process document
             logger.info(f"Processing document {document_id} from {file_path}")
@@ -171,9 +178,11 @@ class ThreatDetectResource(Resource):
         try:
             data = request.get_json()
             
-            # Detect threat
             detection_result = threat_detector.detect_threat(data)
-
+            if detection_result.get('status') == 'unavailable':
+                return {'success': False, 'detection': detection_result}, 503
+            if detection_result.get('status') == 'invalid_input':
+                return {'success': False, 'detection': detection_result}, 422
             return {
                 'success': True,
                 'detection': detection_result,
