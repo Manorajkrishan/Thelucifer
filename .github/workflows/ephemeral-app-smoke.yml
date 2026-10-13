@@ -1,0 +1,172 @@
+name: Lucifer ephemeral application smoke test
+
+on:
+  push:
+    branches:
+      - ci/local-smoke-test-20261014
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api-smoke:
+    name: Laravel API startup and auth
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_sqlite, sqlite3, bcmath, gd, xml, fileinfo
+          coverage: none
+      - name: Install application dependencies
+        working-directory: backend/api
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Start real API and exercise authentication and threat endpoints
+        working-directory: backend/api
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
+          touch database/database.sqlite
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          sed -i "s#^DB_DATABASE=.*#DB_DATABASE=$PWD/database/database.sqlite#" .env
+          sed -i 's/^MAIL_MAILER=.*/MAIL_MAILER=log/' .env
+          php artisan key:generate --force
+          php artisan migrate --force
+          php artisan serve --host=127.0.0.1 --port=8000 >/tmp/lucifer-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill $api_pid 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/api/health >/tmp/lucifer-health.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            cat /tmp/lucifer-api.log
+            exit 1
+          fi
+          export SMOKE_PASSWORD
+          SMOKE_PASSWORD=$(openssl rand -hex 20)
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          base = "http://127.0.0.1:8000"
+          def api(path, method="GET", data=None, token=None):
+              headers = {"Content-Type": "application/json"}
+              if token:
+                  headers["Authorization"] = "Bearer " + token
+              payload = json.dumps(data).encode() if data is not None else None
+              req = urllib.request.Request(base + path, data=payload,
+                                           method=method, headers=headers)
+              with urllib.request.urlopen(req, timeout=8) as response:
+                  return response.status, json.load(response)
+
+          status, health = api("/api/health")
+          assert status == 200 and health["database"] == "connected", health
+          pwd = os.environ["SMOKE_PASSWORD"]
+          status, registration = api("/api/register", "POST", {
+              "name": "Ephemeral Smoke Tester",
+              "email": "smoke@example.test",
+              "password": pwd,
+              "password_confirmation": pwd,
+          })
+          assert status == 201 and registration.get("token"), registration
+          status, threats = api("/api/threats", token=registration["token"])
+          assert status == 200 and threats["success"] is True, threats
+          print("PASS: Laravel startup, SQLite migration, health, registration, authenticated threats")
+          PY
+      - name: Run Laravel authorization regression suite
+        working-directory: backend/api
+        run: php artisan test --filter=ResourceIsolationTest
+
+  frontend-smoke:
+    name: Build and start Next.js public portal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/portal/package-lock.json
+      - name: Install and compile
+        working-directory: frontend/portal
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Start temporary local portal and check login route
+        working-directory: frontend/portal
+        shell: bash
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: |
+          set -euo pipefail
+          npm run start -- --hostname 127.0.0.1 --port 3000 >/tmp/lucifer-portal.log 2>&1 &
+          portal_pid=$!
+          trap 'kill $portal_pid 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/login >/tmp/lucifer-login.html; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            cat /tmp/lucifer-portal.log
+            exit 1
+          fi
+          grep -qi 'SentinelAI' /tmp/lucifer-login.html
+          echo "PASS: Next.js portal compiled, started and served login page"
+
+  admin-smoke:
+    name: Build and serve Vue admin dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/admin-dashboard/package-lock.json
+      - name: Install and compile
+        working-directory: frontend/admin-dashboard
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Serve temporary Vue build
+        working-directory: frontend/admin-dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 5173 >/tmp/lucifer-admin.log 2>&1 &
+          admin_pid=$!
+          trap 'kill $admin_pid 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ >/tmp/lucifer-admin.html; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            cat /tmp/lucifer-admin.log
+            exit 1
+          fi
+          grep -Eqi '(<html|id="app")' /tmp/lucifer-admin.html
+          echo "PASS: Vue admin dashboard compiled and served its entry page"
