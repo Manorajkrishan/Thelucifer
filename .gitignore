@@ -74,3 +74,9 @@ temp/
 *.env.backup
 *.pem
 *.p12
+
+# Local test and ML source data: never re-add generated assets
+backend/api/composer.phar
+frontend/package-lock.json
+backend/ml-service/downloads/*.pdf
+backend/api/public/favicon.ico

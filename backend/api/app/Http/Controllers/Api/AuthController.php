@@ -49,6 +49,11 @@ class AuthController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
+        // Disabled by default in private staging; accounts must be provisioned deliberately.
+        if (!config('app.public_registration', false)) {
+            return response()->json(['success' => false, 'message' => 'Registration is disabled'], 403);
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
