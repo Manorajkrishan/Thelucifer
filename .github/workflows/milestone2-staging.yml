@@ -7,7 +7,7 @@ on:
       - 'backend/api/**'
       - 'backend/ml-service/**'
       - 'infrastructure/compose.staging.yaml'
-      - 'infrastructure/render.staging.yaml'
+      - 'infrastructure/oracle/**'
       - '.github/workflows/milestone2-staging.yml'
 permissions:
   contents: read
@@ -83,13 +83,16 @@ jobs:
           assert all('ports' not in service for service in compose['services'].values())
           assert compose['networks']['internal']['internal'] is True
           assert compose['services']['api']['environment']['ALLOW_PUBLIC_REGISTRATION'] == 'false'
-          with open('infrastructure/render.staging.yaml', encoding='utf-8') as f:
-              render = yaml.safe_load(f)
-          assert len(render['services']) == 2
-          assert all(s['type'] == 'pserv' for s in render['services'])
-          assert render['databases'][0]['ipAllowList'] == []
-          assert all(s['autoDeployTrigger'] == 'off' for s in render['services'])
-          print('PASS: private-only staging blueprint and Compose configuration')
+          with open('infrastructure/oracle/compose.yaml', encoding='utf-8') as f:
+              oci = yaml.safe_load(f)
+          assert set(oci['services']) == {'postgres', 'api', 'ml-service', 'web'}
+          assert all('ports' not in s for k, s in oci['services'].items() if k != 'web')
+          assert oci['services']['web']['ports'] == ['127.0.0.1:8080:80']
+          assert oci['networks']['backplane']['internal'] is True
+          assert oci['services']['api']['environment']['ALLOW_PUBLIC_REGISTRATION'] == 'false'
+          assert oci['services']['ml-service']['environment']['THREAT_MODEL_PATH'] == ''
+          print('PASS: private Oracle-only VM profile and local staging profile')
+          print('PASS: private-only Oracle staging topology')
           PY
       - name: Validate real Docker Compose topology without publishing ports
         env:

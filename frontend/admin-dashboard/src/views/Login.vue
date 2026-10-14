@@ -27,9 +27,7 @@
         <div v-if="error" class="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
           {{ error }}
         </div>
-        <p class="text-gray-500 text-xs">
-          Default: admin@sentinelai.com / admin123. Run <code class="bg-gray-100 px-1">.\CREATE-ADMIN-USER.ps1</code> if needed.
-        </p>
+        <p class="text-gray-500 text-xs">Private staging environment. Sign in with a provisioned test account.</p>
         
         <button
           type="submit"
