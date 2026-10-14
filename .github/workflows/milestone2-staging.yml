@@ -91,3 +91,24 @@ jobs:
           assert all(s['autoDeployTrigger'] == 'off' for s in render['services'])
           print('PASS: private-only staging blueprint and Compose configuration')
           PY
+      - name: Validate real Docker Compose topology without publishing ports
+        env:
+          POSTGRES_USER: lucifer_ci
+        run: |
+          set -euo pipefail
+          export POSTGRES_PASSWORD ML_INTERNAL_TOKEN APP_KEY
+          POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          ML_INTERNAL_TOKEN=$(openssl rand -hex 32)
+          APP_KEY="base64:$(openssl rand -base64 32)"
+          docker compose -f infrastructure/compose.staging.yaml config --format json > /tmp/lucifer-staging-compose.json
+          python - <<'PY'
+          import json
+          with open('/tmp/lucifer-staging-compose.json', encoding='utf-8') as f:
+              cfg = json.load(f)
+          assert set(cfg['services']) == {'postgres', 'api', 'ml-service'}
+          assert all(not svc.get('ports') for svc in cfg['services'].values())
+          assert cfg['networks']['internal']['internal'] is True
+          assert cfg['services']['api']['environment']['ML_SERVICE_URL'] == 'http://ml-service:5000'
+          assert cfg['services']['api']['environment']['ALLOW_PUBLIC_REGISTRATION'] == 'false'
+          print('PASS: Docker Compose resolves three service private topology, zero published ports')
+          PY
