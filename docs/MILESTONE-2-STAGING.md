@@ -18,24 +18,22 @@ Retained intentionally:
   `backend/api/composer.phar` is called by `backend/api/composer.bat`.
   Removing these without replacing their callers could break offline tooling.
 
-## Private stack
+## Private stack — Oracle Always Free ARM64
 
-`infrastructure/compose.staging.yaml` is an isolated, no-published-port
-configuration. It connects Laravel, PostgreSQL and the token-protected ML service
-inside one Docker `internal: true` network. It is for smoke/integration testing
-only; access needs an explicit, authenticated diagnostic connector.
+Paid Oracle staging has been dropped. There is **no Oracle provisioning** and no
+paid hosting requirement for the selected path. The Oracle 2-OCPU / 12-GB
+Always Free A1 VM runs a separate isolated Compose profile at
+`infrastructure/oracle/compose.yaml`. An Ubuntu account owner must create and
+secure the VM manually; ChatGPT cannot access an OCI tenancy without an
+authorised connection.
 
-`infrastructure/render.staging.yaml` defines a **proposed**, not provisioned,
-Render Blueprint: two private services (`pserv`) and a new isolated PostgreSQL
-instance with `ipAllowList: []`. It must be synchronized manually after cost,
-secrets and region review. Render private services need paid compute; the free
-database has an expiry limit. The current Render workspace already contains
-an unrelated suspended database; it is **not** reused.
+Read the complete account setup, networking, secret generation, protected
+Tailscale access, troubleshooting, and limitations in
+[`docs/ORACLE-ALWAYS-FREE-ARM64.md`](ORACLE-ALWAYS-FREE-ARM64.md).
 
-The secure Vercel demo **cannot** call Render private addresses directly.
-A separately designed, identity-verified gateway with end-to-end authorization
-and rate limiting is required before a real interactive frontend can be linked.
-Do not change `pserv` to public web services to work around this.
+The earlier standalone `infrastructure/compose.staging.yaml` is still valid
+for private local infrastructure checks, but the Oracle version adds a
+127.0.0.1-only nginx / Vue gateway for testing authorised sign-in.
 
 ## Security and secret checklist (blocking)
 
@@ -49,12 +47,12 @@ Do not change `pserv` to public web services to work around this.
       `php artisan key:generate --show` in a trusted local environment.
       Rotate a formerly used key carefully; old encrypted data/sessions can break.
 - [ ] Confirm `ML_INTERNAL_TOKEN` is unique/random and at least 32 bytes.
-      Render generates it on API service and references it on ML privately.
+      The local prepare-secrets.sh generates a unique token shared only inside Docker.
 - [ ] Leave public registration disabled; create the first user via a protected
       admin/CLI workflow using a unique, manually supplied password.
 - [ ] Configure exact CORS origins only after the approved host is ready. Empty
       origins by default; no wildcard.
-- [ ] Confirm Render charges and resource sizes before syncing private services.
+- [ ] Confirm OCI A1 Always Free (2 OCPU / 12 GB) and 50 GB boot volume allocation in home region. Never upgrade to a paid plan.
 - [ ] Validate Docker network: `docker compose -f infrastructure/compose.staging.yaml
       --env-file .env config`; no published host ports.
 - [ ] Run PostgreSQL-backed Laravel tests, per-user resource isolation, ML auth,
@@ -72,7 +70,7 @@ For local tests, supply the root `.env` values (never commit them):
 Nothing listens on public host ports in staging Compose. To test from a local
 terminal use authenticated `docker compose exec` checks, not port publishing.
 
-On Render, application code reads `DATABASE_URL` privately; Laravel accepts
+In other environments, application code reads `DATABASE_URL` privately; Laravel accepts
 the URL and Python uses `psycopg2.connect`. The API resolves the private ML
 `hostport` via `ML_SERVICE_HOSTPORT` and prefixes `http://` server-side.
 

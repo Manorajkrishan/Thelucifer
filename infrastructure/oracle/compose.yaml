@@ -1,0 +1,100 @@
+# Oracle Always Free: Ampere A1 (ARM64), 2 OCPUs / 12 GB, in home region.
+# Inbound application traffic is bound ONLY to host loopback.
+# Use Tailscale Serve (not Funnel) for tailnet-only HTTPS access.
+name: lucifer-oci-staging
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      - POSTGRES_DB=lucifer_oci
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?required} -d lucifer_oci"]
+      interval: 6s
+      timeout: 4s
+      retries: 20
+    networks: [backplane]
+
+  ml-service:
+    build:
+      context: ../../backend/ml-service
+      dockerfile: Dockerfile.arm64
+    restart: unless-stopped
+    environment:
+      ML_INTERNAL_TOKEN: ${ML_INTERNAL_TOKEN:?Set unique ML_INTERNAL_TOKEN}
+      THREAT_MODEL_PATH: ""
+    expose: ["5000"]
+    mem_limit: 1800m
+    cpus: 0.65
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [backplane]
+
+  api:
+    build:
+      context: ../../backend/api
+      dockerfile: Dockerfile.oracle
+    restart: unless-stopped
+    command: ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"]
+    environment:
+      APP_NAME: Lucifer X Staging
+      APP_KEY: ${APP_KEY:?Generate fresh APP_KEY}
+      APP_ENV: staging
+      APP_DEBUG: "false"
+      APP_URL: "http://api:8000"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: lucifer_oci
+      DB_USERNAME: ${POSTGRES_USER:?required}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      DB_SSLMODE: prefer
+      CACHE_DRIVER: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: log
+      ALLOW_PUBLIC_REGISTRATION: "false"
+      CORS_ALLOWED_ORIGINS: ""
+      ML_SERVICE_URL: "http://ml-service:5000"
+      ML_INTERNAL_TOKEN: ${ML_INTERNAL_TOKEN:?required}
+    depends_on:
+      postgres: {condition: service_healthy}
+      ml-service: {condition: service_started}
+    volumes:
+      - api_storage:/var/www/html/storage
+    expose: ["8000"]
+    mem_limit: 1400m
+    cpus: 0.65
+    security_opt: ["no-new-privileges:true"]
+    networks: [backplane]
+
+  web:
+    build:
+      context: ../../frontend/admin-dashboard
+      dockerfile: Dockerfile.oracle
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on: [api]
+    mem_limit: 180m
+    cpus: 0.25
+    read_only: true
+    tmpfs: ["/var/cache/nginx:rw,noexec,nosuid,size=32m", "/var/run:rw,nosuid,size=8m", "/tmp:rw,noexec,nosuid,size=8m"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [backplane, edge]
+
+volumes:
+  pg_data:
+  api_storage:
+
+networks:
+  # No backend service can be reached on an instance public network address.
+  backplane: {internal: true}
+  edge: {}

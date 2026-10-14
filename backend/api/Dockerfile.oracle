@@ -1,0 +1,20 @@
+# Native amd64 and arm64 support. Separate from old local PHP-FPM Dockerfile.
+FROM php:8.2-cli-bookworm
+ENV COMPOSER_ALLOW_SUPERUSER=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl unzip libpng-dev libonig-dev libxml2-dev libpq-dev zip \
+    && docker-php-ext-install pdo_pgsql mbstring bcmath gd \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+WORKDIR /var/www/html
+COPY composer.json composer.lock ./
+# The Laravel artisan entrypoint does not exist until source has been copied.
+RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --optimize-autoloader
+COPY . .
+RUN composer dump-autoload --optimize --no-interaction \
+    && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 750 storage bootstrap/cache
+USER www-data
+EXPOSE 8000
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]

@@ -1,0 +1,7 @@
+# CPU-only, inference-only ML profile for the 2-OCPU / 12-GB Oracle Always Free A1 VM.
+# Do NOT load arbitrary pickle/joblib artifacts; only operator-validated offline models.
+Flask==3.0.0
+gunicorn==22.0.0
+numpy==1.26.2
+scikit-learn==1.3.2
+joblib==1.3.2

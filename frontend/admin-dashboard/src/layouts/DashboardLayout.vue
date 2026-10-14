@@ -57,10 +57,7 @@ const authStore = useAuthStore()
 const navigation = [
   { name: 'Dashboard', to: '/', icon: 'HomeIcon' },
   { name: 'Threats', to: '/threats', icon: 'ShieldExclamationIcon' },
-  { name: 'Documents', to: '/documents', icon: 'DocumentIcon' },
-  { name: 'Incidents', to: '/incidents', icon: 'ExclamationTriangleIcon' },
-  { name: 'Simulations', to: '/simulations', icon: 'CpuChipIcon' },
-  { name: 'Settings', to: '/settings', icon: 'CogIcon' }
+  { name: 'Incidents', to: '/incidents', icon: 'ExclamationTriangleIcon' }
 ]
 
 const pageTitle = computed(() => {

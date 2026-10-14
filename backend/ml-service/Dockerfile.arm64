@@ -1,0 +1,15 @@
+# Native ARM64 build: only low-resource inference dependencies.
+# Deliberately excludes torch, transformers, model downloads and offensive modules.
+FROM python:3.11-slim-bookworm
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+COPY requirements.arm64.txt ./
+RUN pip install --no-cache-dir -r requirements.arm64.txt \
+    && groupadd --system lucifer \
+    && useradd --system --no-create-home --gid lucifer --shell /usr/sbin/nologin lucifer
+COPY app_inference.py security.py ./
+COPY services/__init__.py services/threat_detector.py ./services/
+RUN chown -R lucifer:lucifer /app
+USER lucifer
+EXPOSE 5000
+CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:5000", "--timeout", "60", "app_inference:app"]
