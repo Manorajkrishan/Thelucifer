@@ -122,6 +122,8 @@ return [
     |
     */
 
+    'public_registration' => filter_var(env('ALLOW_PUBLIC_REGISTRATION', false), FILTER_VALIDATE_BOOLEAN),
+
     'key' => env('APP_KEY'),
 
     'cipher' => 'AES-256-CBC',

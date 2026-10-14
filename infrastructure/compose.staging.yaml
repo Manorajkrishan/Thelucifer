@@ -1,0 +1,81 @@
+# Run alone: docker compose -f infrastructure/compose.staging.yaml --env-file .env up
+# No ports are published. Private/internal container network only.
+name: lucifer-staging
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: lucifer_staging
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?required} -d lucifer_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks: [internal]
+
+  ml-service:
+    build:
+      context: ../backend/ml-service
+      dockerfile: Dockerfile
+    environment:
+      ML_INTERNAL_TOKEN: ${ML_INTERNAL_TOKEN:?required}
+      ML_DOCUMENT_ROOT: /app/ingest/app/public
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: lucifer_staging
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      NEO4J_URI: bolt://127.0.0.1:1
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - api_storage:/app/ingest:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose: ["5000"]
+    networks: [internal]
+
+  api:
+    build:
+      context: ../backend/api
+      dockerfile: Dockerfile
+    environment:
+      APP_KEY: ${APP_KEY:?required}
+      APP_ENV: staging
+      APP_DEBUG: "false"
+      APP_URL: http://api:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: lucifer_staging
+      DB_USERNAME: ${POSTGRES_USER:?required}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      DB_SSLMODE: prefer
+      ALLOW_PUBLIC_REGISTRATION: "false"
+      CORS_ALLOWED_ORIGINS: ""
+      CACHE_DRIVER: file
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: log
+      ML_SERVICE_URL: http://ml-service:5000
+      ML_INTERNAL_TOKEN: ${ML_INTERNAL_TOKEN:?required}
+    command: ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"]
+    volumes:
+      - api_storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+    expose: ["8000"]
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  api_storage:
+networks:
+  internal:
+    internal: true

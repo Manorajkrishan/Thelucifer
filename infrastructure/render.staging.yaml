@@ -1,0 +1,84 @@
+# REVIEW ONLY. Do not sync this Blueprint until costs, secrets, IAM and
+# private networking are approved. Unlike web services, pserv has no public URL.
+# The Vercel static demo CANNOT connect to these private addresses directly.
+services:
+  - type: pserv
+    name: lucifer-staging-ml
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: staging/milestone-2-private-stack-20261014
+    autoDeployTrigger: off
+    dockerfilePath: ./backend/ml-service/Dockerfile
+    dockerContext: ./backend/ml-service
+    envVars:
+      - key: PORT
+        value: "5000"
+      - key: ML_INTERNAL_TOKEN
+        fromService:
+          name: lucifer-staging-api
+          type: pserv
+          envVarKey: ML_INTERNAL_TOKEN
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lucifer-staging-db
+          property: connectionString
+      - key: NEO4J_URI
+        value: bolt://127.0.0.1:1
+      - key: TRANSFORMERS_OFFLINE
+        value: "1"
+      - key: HF_HUB_OFFLINE
+        value: "1"
+  - type: pserv
+    name: lucifer-staging-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: staging/milestone-2-private-stack-20261014
+    autoDeployTrigger: off
+    dockerfilePath: ./backend/api/Dockerfile
+    dockerContext: ./backend/api
+    dockerCommand: sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: APP_KEY
+        sync: false # Laravel base64:<value>, generated and entered via Render dashboard
+      - key: APP_ENV
+        value: staging
+      - key: APP_DEBUG
+        value: "false"
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lucifer-staging-db
+          property: connectionString
+      - key: DB_SSLMODE
+        value: require
+      - key: ML_SERVICE_HOSTPORT
+        fromService:
+          name: lucifer-staging-ml
+          type: pserv
+          property: hostport
+      - key: ML_INTERNAL_TOKEN
+        generateValue: true
+      - key: ALLOW_PUBLIC_REGISTRATION
+        value: "false"
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: CACHE_DRIVER
+        value: file
+      - key: SESSION_DRIVER
+        value: file
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: MAIL_MAILER
+        value: log
+
+databases:
+  - name: lucifer-staging-db
+    databaseName: lucifer_staging
+    plan: free # Time-limited; request authorization before selecting a paid tier.
+    region: frankfurt
+    ipAllowList: [] # Private internal-only database connections

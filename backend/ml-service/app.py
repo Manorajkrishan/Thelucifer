@@ -64,6 +64,10 @@ redis_client = redis.Redis(
 
 # Initialize PostgreSQL connection pool
 def get_db_connection():
+    # Render provides an internal-only PostgreSQL DSN; never print it to logs.
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        return psycopg2.connect(database_url)
     return psycopg2.connect(
         host=os.getenv('POSTGRES_HOST', 'localhost'),
         database=os.getenv('POSTGRES_DB', 'sentinelai'),
