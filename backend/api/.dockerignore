@@ -1,0 +1,16 @@
+# Do not bake secret-bearing developer files or executable tooling into staging images
+.env
+.env.*
+!.env.example
+composer.phar
+composer.bat
+vendor/
+tests/
+*.sqlite
+*.db
+*.log
+storage/logs/*
+node_modules/
+.git/
+.idea/
+.vscode/

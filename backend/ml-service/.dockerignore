@@ -1,0 +1,17 @@
+# Tracked reference PDFs are retained in Git but excluded from runtime images
+.env
+.env.*
+downloads/
+datasets/
+models/
+data/
+logs/
+tests/
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.pickle
+*.joblib
+*.sqlite
+.git/
