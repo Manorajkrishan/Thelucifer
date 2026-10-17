@@ -9,6 +9,7 @@ permissions:
   contents: read
 jobs:
   demo-build:
+    if: github.event_name == 'push' || startsWith(github.head_ref, 'preview/lucifer-x-protected-ui')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

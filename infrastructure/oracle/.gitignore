@@ -1,0 +1,5 @@
+# Local deployment runtime only
+*.env
+*.secret
+*.key
+*.log

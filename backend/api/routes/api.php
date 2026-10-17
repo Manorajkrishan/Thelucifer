@@ -101,3 +101,30 @@ Route::middleware('auth:sanctum')->prefix('threat-actions')->group(function () {
     Route::put('/{threatAction}', [ThreatActionController::class, 'update']);
     Route::delete('/{threatAction}', [ThreatActionController::class, 'destroy']);
 });
+
+ 
+// Private ML service introspection: authenticated users only, no raw host info,
+// no models or internal tokens returned in the response.
+Route::middleware('auth:sanctum')->get('/ml/status', function () {
+    $url = rtrim((string) config('services.ml.url'), '/');
+    $token = (string) config('services.ml.internal_token');
+    if (!$url || !$token) {
+        return response()->json(['success' => false, 'status' => 'unavailable'], 503);
+    }
+
+    try {
+        $reply = \Illuminate\Support\Facades\Http::withToken($token)
+            ->timeout(5)->get("{$url}/api/v1/status");
+        if (!$reply->ok()) {
+            return response()->json(['success' => false, 'status' => 'unavailable'], 503);
+        }
+
+        return response()->json([
+            'success' => true,
+            'status' => 'connected',
+            'model_available' => $reply->json('model_available') === true,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json(['success' => false, 'status' => 'unavailable'], 503);
+    }
+})->middleware('throttle:30,1');

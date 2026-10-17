@@ -1,0 +1,136 @@
+name: Oracle A1 Native ARM64 Private Staging
+on:
+  push:
+    branches: [staging/milestone-2-private-stack-20261014]
+    paths:
+      - 'backend/api/**'
+      - 'backend/ml-service/**'
+      - 'frontend/admin-dashboard/**'
+      - 'infrastructure/oracle/**'
+      - '.github/workflows/oracle-arm64.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm64-private-stack:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm architecture and prepare disposable CI secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          umask 077
+          {
+            echo 'POSTGRES_USER=lucifer_ci_operator'
+            printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)"
+            printf 'ML_INTERNAL_TOKEN=%s\n' "$(openssl rand -hex 32)"
+            printf 'APP_KEY=base64:%s\n' "$(openssl rand -base64 32 | tr -d '\n')"
+          } >"$RUNNER_TEMP/lucifer-ci.env"
+          echo "OCI_ENV=$RUNNER_TEMP/lucifer-ci.env" >>"$GITHUB_ENV"
+
+      - name: Validate resolved private topology and zero public ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml config --format json > "$RUNNER_TEMP/compose.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/compose.json') as f:
+              cfg = json.load(f)
+          assert set(cfg['services']) == {'api','ml-service','postgres','web'}
+          assert cfg['networks']['backplane']['internal'] is True
+          for name in ('api','postgres','ml-service'):
+              assert not cfg['services'][name].get('ports'), name
+          exposed = cfg['services']['web']['ports']
+          assert len(exposed) == 1 and exposed[0]['host_ip'] == '127.0.0.1', exposed
+          assert str(exposed[0]['published']) == '8080', exposed
+          assert cfg['services']['api']['environment']['ALLOW_PUBLIC_REGISTRATION'] == 'false'
+          assert cfg['services']['ml-service']['environment']['THREAT_MODEL_PATH'] == ''
+          print('PASS: ARM64 staging has no public backend ports and a loopback-only UI')
+          PY
+
+      - name: Build actual ARM64 containers from source
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml build --parallel
+
+      - name: Start actual private stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml up -d
+          ready=0
+          for i in $(seq 1 80); do
+            if curl -fsS http://127.0.0.1:8080/api/health > "$RUNNER_TEMP/api-health.json" 2>/dev/null; then
+              if python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['database']=='connected'" "$RUNNER_TEMP/api-health.json"; then
+                ready=1
+                break
+              fi
+            fi
+            sleep 3
+          done
+          if [ "$ready" != "1" ]; then
+            docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml ps
+            docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml logs --tail=80 api ml-service web
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:8080/login >/dev/null
+          echo 'PASS: ARM64 Laravel, PostgreSQL, ML and Vue gateway started successfully'
+
+      - name: Test authentication and Laravel-to-ML private token handshake
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SMOKE_USER_PASSWORD
+          SMOKE_USER_PASSWORD="$(openssl rand -hex 22)"
+          docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml exec -T \
+            -e INITIAL_ADMIN_PASSWORD="$SMOKE_USER_PASSWORD" api \
+            php artisan sentinelai:create-admin --email=oci-smoke@example.test >/dev/null
+
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          base="http://127.0.0.1:8080"
+          def query(path, method="GET", body=None, token=None):
+              headers={"Content-Type":"application/json"}
+              if token: headers["Authorization"]="Bearer "+token
+              payload=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,method=method,data=payload,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=10) as r:
+                      return r.status,json.load(r)
+              except urllib.error.HTTPError as e:
+                  return e.code,json.load(e)
+          status,_=query("/api/register","POST",{
+              "name":"not allowed","email":"none@example.test",
+              "password":"123456789123","password_confirmation":"123456789123"})
+          assert status == 403, status
+          status,_=query("/api/ml/status")
+          assert status == 401, status
+          status,p= query("/api/login","POST",{
+              "email":"oci-smoke@example.test",
+              "password":os.environ['SMOKE_USER_PASSWORD']})
+          assert status==200 and p.get("token"), (status,p)
+          status,ml=query("/api/ml/status",token=p["token"])
+          assert status==200 and ml.get("status")=="connected", (status,ml)
+          assert ml.get("model_available") is False, ml
+          status,threats=query("/api/threats",token=p["token"])
+          assert status==200 and threats["success"] is True, (status,threats)
+          print("PASS: no public registration; unauthenticated ML rejected; Laravel authenticated to ML; model safely unavailable")
+          PY
+
+      - name: Always destroy ephemeral CI services and data
+        if: always()
+        shell: bash
+        run: |
+          docker compose --env-file "$OCI_ENV" -f infrastructure/oracle/compose.yaml down -v --remove-orphans || true
+          rm -f "$OCI_ENV"
